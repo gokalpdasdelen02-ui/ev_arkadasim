@@ -1,10 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+
+import 'firebase_options.dart';
+
+import 'login_page.dart';
 
 import 'add_expense_page.dart';
 import 'models/expense.dart';
 import 'services/balance_calculator.dart';
 
-void main() {
+import 'package:firebase_auth/firebase_auth.dart';
+
+import 'services/auth_service.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   runApp(const MyApp());
 }
 
@@ -24,7 +37,61 @@ class MyApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color(0xFFF6F8FA),
       ),
-      home: const HomePage(),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
+  late final Stream<User?> _authState;
+
+  @override
+  void initState() {
+    super.initState();
+    _authState = AuthService().authStateChanges();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: _authState,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Scaffold(
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'Oturum kontrol edilemedi. '
+                    'Lütfen uygulamayı yeniden başlat.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.data == null) {
+          return const LoginPage();
+        }
+
+        return const HomePage();
+      },
     );
   }
 }
@@ -40,6 +107,8 @@ class _HomePageState extends State<HomePage> {
   static const _members = {'me': 'Sen', 'ayse': 'Ayşe', 'zeynep': 'Zeynep'};
 
   final List<Expense> _expenses = [];
+  final _authService = AuthService();
+  bool _isSigningOut = false;
 
   Future<void> _openAddExpensePage() async {
     final expense = await Navigator.of(context).push<Expense>(
@@ -53,6 +122,38 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _expenses.insert(0, expense);
     });
+  }
+
+  Future<void> _signOut() async {
+    if (_isSigningOut) {
+      return;
+    }
+
+    setState(() {
+      _isSigningOut = true;
+    });
+
+    try {
+      await _authService.signOut();
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Çıkış yapılamadı. Lütfen tekrar dene.'),
+          ),
+        );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSigningOut = false;
+        });
+      }
+    }
   }
 
   @override
@@ -69,6 +170,19 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Ev Arkadaşım'),
         backgroundColor: const Color(0xFFF6F8FA),
+        actions: [
+          IconButton(
+            tooltip: 'Çıkış yap',
+            onPressed: _isSigningOut ? null : _signOut,
+            icon: _isSigningOut
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout),
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
@@ -155,7 +269,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openAddExpensePage,
+        onPressed: _isSigningOut ? null : _openAddExpensePage,
         icon: const Icon(Icons.add),
         label: const Text('Gider ekle'),
       ),
