@@ -1,0 +1,98 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  function invitePath(code) {
+  return /databases/$(database)/documents/householdInvites/$(code);
+}
+
+function validInviteCode(code) {
+  return code is string && code.matches('^[a-f0-9]{32}$');
+}
+
+function validHouseholdId(id) {
+  return id is string && id.matches('^[A-Za-z0-9_-]{1,128}$');
+}
+
+function canUseInvite(code, householdId) {
+  let invite = get(invitePath(code));
+  return invite != null
+    && invite.data.householdId == householdId
+    && request.time < invite.data.createdAt + duration.value(1, 'd');
+}
+
+match /householdInvites/{code} {
+  allow get: if signedIn() && validInviteCode(code);
+
+  allow create: if signedIn()
+    && validInviteCode(code)
+    && request.resource.data.keys().hasOnly(['householdId', 'createdAt'])
+    && validHouseholdId(request.resource.data.householdId)
+    && request.resource.data.createdAt == request.time
+    && get(householdPath(request.resource.data.householdId)).data.ownerId
+      == request.auth.uid;
+
+  allow delete: if signedIn()
+    && !exists(membershipPath(request.auth.uid))
+    && getAfter(membershipPath(request.auth.uid)).data.inviteCode == code;
+}
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function membershipPath(uid) {
+      return /databases/$(database)/documents/memberships/$(uid);
+    }
+
+    function householdPath(householdId) {
+      return /databases/$(database)/documents/households/$(householdId);
+    }
+
+    match /households/{householdId} {
+      allow get: if signedIn()
+        && get(membershipPath(request.auth.uid)).data.householdId == householdId;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'ownerId', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && !exists(membershipPath(request.auth.uid))
+        && getAfter(membershipPath(request.auth.uid)).data.householdId == householdId;
+    }
+
+    match /memberships/{uid} {
+  allow get: if signedIn() && request.auth.uid == uid;
+
+  allow create: if signedIn()
+    && request.auth.uid == uid
+    && request.resource.data.joinedAt == request.time
+    && validHouseholdId(request.resource.data.householdId)
+    && (
+      (
+        request.resource.data.role == 'owner'
+        && request.resource.data.keys().hasOnly(
+          ['householdId', 'role', 'joinedAt']
+        )
+        && !exists(householdPath(request.resource.data.householdId))
+        && getAfter(householdPath(request.resource.data.householdId)).data.ownerId == uid
+      )
+      ||
+      (
+        request.resource.data.role == 'member'
+        && request.resource.data.keys().hasOnly(
+          ['householdId', 'role', 'joinedAt', 'inviteCode']
+        )
+        && validInviteCode(request.resource.data.inviteCode)
+        && canUseInvite(
+          request.resource.data.inviteCode,
+          request.resource.data.householdId
+        )
+        && !existsAfter(invitePath(request.resource.data.inviteCode))
+      )
+    );
+}
+  }
+}

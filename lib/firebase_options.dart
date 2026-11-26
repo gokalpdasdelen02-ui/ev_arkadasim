@@ -56,7 +56,6 @@ class DefaultFirebaseOptions {
     projectId: 'ev-arkadasim-674aa',
     storageBucket: 'ev-arkadasim-674aa.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAW8k4N9ZfpYUZkKEGSZ9KPWsiyxeWRGCI',
     appId: '1:898845685205:ios:37d069d048facac300795c',

@@ -13,6 +13,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'services/auth_service.dart';
 
+import 'household_gate.dart';
+import 'models/household.dart';
+
+import 'package:flutter/services.dart';
+
+import 'services/household_service.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -85,19 +92,25 @@ class _AuthGateState extends State<AuthGate> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-
-        if (snapshot.data == null) {
+        final user = snapshot.data;
+        if (user == null) {
           return const LoginPage();
         }
 
-        return const HomePage();
+        return HouseholdGate(
+          key: ValueKey(user.uid),
+          uid: user.uid,
+          homeBuilder: (household) => HomePage(household: household),
+        );
       },
     );
   }
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage({super.key, required this.household});
+
+  final Household household;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -122,6 +135,45 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _expenses.insert(0, expense);
     });
+  }
+
+  bool _creatingInvite = false;
+
+  Future<void> _createInvite() async {
+    if (_creatingInvite) return;
+    setState(() => _creatingInvite = true);
+
+    try {
+      final code = await HouseholdService().createInviteCode(
+        widget.household.id,
+      );
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Davet kodu'),
+          content: SelectableText('$code\n\nTek kullanımlık · 24 saat geçerli'),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: code));
+                if (dialogContext.mounted) Navigator.pop(dialogContext);
+              },
+              child: const Text('Kodu kopyala'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Davet kodu oluşturulamadı.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _creatingInvite = false);
+    }
   }
 
   Future<void> _signOut() async {
@@ -171,6 +223,14 @@ class _HomePageState extends State<HomePage> {
         title: const Text('Ev Arkadaşım'),
         backgroundColor: const Color(0xFFF6F8FA),
         actions: [
+          if (widget.household.isOwner)
+            IconButton(
+              tooltip: 'Davet kodu oluştur',
+              onPressed: _creatingInvite || _isSigningOut
+                  ? null
+                  : _createInvite,
+              icon: const Icon(Icons.person_add_alt_1),
+            ),
           IconButton(
             tooltip: 'Çıkış yap',
             onPressed: _isSigningOut ? null : _signOut,
@@ -188,7 +248,7 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
         children: [
           Text(
-            'Evde hesaplar net.',
+            widget.household.name,
             style: Theme.of(context).textTheme.headlineSmall
                 ?.copyWith(fontWeight: FontWeight.bold),
           ),
