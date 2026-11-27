@@ -1,8 +1,10 @@
 import '../models/expense.dart';
+import '../models/payment.dart';
 
 Map<String, int> calculateBalances({
   required String userId,
   required Iterable<Expense> expenses,
+  Iterable<Payment> payments = const <Payment>[],
 }) {
   final balances = <String, int>{};
 
@@ -25,6 +27,24 @@ Map<String, int> calculateBalances({
       final payerId = expense.paidById;
 
       balances[payerId] = (balances[payerId] ?? 0) - myShare;
+    }
+  }
+
+  for (final payment in payments) {
+    if (payment.status != PaymentStatus.approved) continue;
+
+    if (payment.debtorId == userId) {
+      balances.update(
+        payment.creditorId,
+        (value) => value + payment.amountInKurus,
+        ifAbsent: () => payment.amountInKurus,
+      );
+    } else if (payment.creditorId == userId) {
+      balances.update(
+        payment.debtorId,
+        (value) => value - payment.amountInKurus,
+        ifAbsent: () => -payment.amountInKurus,
+      );
     }
   }
 

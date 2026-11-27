@@ -1,21 +1,43 @@
 import 'package:flutter/material.dart';
 
 import 'models/expense.dart';
+import 'money.dart';
 
 class AddExpensePage extends StatefulWidget {
-  const AddExpensePage({super.key});
+  const AddExpensePage({
+    super.key,
+    required this.userId,
+    required this.members,
+    required this.onSave,
+  });
+
+  final String userId;
+  final Map<String, String> members;
+  final Future<void> Function(Expense) onSave;
 
   @override
   State<AddExpensePage> createState() => _AddExpensePageState();
 }
 
 class _AddExpensePageState extends State<AddExpensePage> {
-  static const _members = {'me': 'Sen', 'ayse': 'Ayşe', 'zeynep': 'Zeynep'};
-
-  String _paidById = 'me';
-  final Set<String> _participantIds = {'me', 'ayse', 'zeynep'};
+  late String _paidById;
+  late final Set<String> _participantIds;
   final _nameController = TextEditingController();
   final _amountController = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _paidById = widget.userId;
+    _participantIds = widget.members.keys.toSet();
+  }
+
+  String _memberLabel(String id) {
+    final name = widget.members[id] ?? 'Üye';
+    return id == widget.userId ? '$name (sen)' : name;
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -23,79 +45,43 @@ class _AddExpensePageState extends State<AddExpensePage> {
     super.dispose();
   }
 
-  int? _parseAmountInKurus(String input) {
-    final text = input.trim();
-
-    if (!RegExp(r'^[0-9]+([,.][0-9]{1,2})?$').hasMatch(text)) {
-      return null;
-    }
-
-    final parts = text.replaceAll(',', '.').split('.');
-    final lira = parts[0];
-    final kurus = parts.length == 2 ? parts[1].padRight(2, '0') : '00';
-
-    return int.tryParse('$lira$kurus');
-  }
-
-  Map<String, int> _splitEqually(int amountInKurus) {
-    final participantIds = _participantIds.toList()..sort();
-
-    if (participantIds.isEmpty) {
-      throw StateError('Pay hesaplamak için katılımcı gerekli.');
-    }
-
-    final baseShare = amountInKurus ~/ participantIds.length;
-    final remainingKurus = amountInKurus % participantIds.length;
-
-    final shares = <String, int>{};
-
-    for (var index = 0; index < participantIds.length; index++) {
-      final extraKurus = index < remainingKurus ? 1 : 0;
-
-      shares[participantIds[index]] = baseShare + extraKurus;
-    }
-
-    return shares;
-  }
-
-  String _formatMoney(int amountInKurus) {
-    final lira = amountInKurus ~/ 100;
-    final kurus = (amountInKurus % 100).toString().padLeft(2, '0');
-
-    return '$lira,$kurus TL';
-  }
-
   Future<void> _checkExpense() async {
+    if (_saving) return;
     FocusScope.of(context).unfocus();
 
     final name = _nameController.text.trim();
-    final amountInKurus = _parseAmountInKurus(_amountController.text);
+    final amountInKurus = parseMoneyInKurus(_amountController.text);
 
     String message;
 
     if (name.isEmpty) {
       message = 'Lütfen gider adını gir.';
+    } else if (name.length > Expense.maxTitleLength) {
+      message = 'Gider adı en fazla ${Expense.maxTitleLength} karakter olabilir.';
     } else if (amountInKurus == null) {
       message = 'Geçerli bir tutar gir. Örneğin: 125,50';
     } else if (amountInKurus <= 0) {
       message = 'Tutar sıfırdan büyük olmalı.';
+    } else if (amountInKurus > Expense.maxAmountInKurus) {
+      message = 'Bir gider en fazla 1.000.000 TL olabilir.';
     } else if (_participantIds.isEmpty) {
       message = 'En az bir katılımcı seç.';
+    } else if (_participantIds.length > Expense.maxParticipants) {
+      message = 'Bir gider için en fazla ${Expense.maxParticipants} kişi seçebilirsin.';
     } else {
-      final shares = _splitEqually(amountInKurus);
-      final expense = Expense(
+      final expense = Expense.equalSplit(
         title: name,
         amountInKurus: amountInKurus,
         paidById: _paidById,
-        createdById: 'me',
+        createdById: widget.userId,
         createdAt: DateTime.now(),
-        shares: shares,
+        participantIds: _participantIds,
       );
 
       final shareLines = expense.shares.entries
           .map((entry) {
-            final memberName = _members[entry.key]!;
-            final amountText = _formatMoney(entry.value);
+            final memberName = _memberLabel(entry.key);
+            final amountText = formatMoney(entry.value);
 
             return '$memberName: $amountText';
           })
@@ -111,10 +97,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
             content: SingleChildScrollView(
               child: Text(
                 '${expense.title}\n'
-                'Toplam: ${_formatMoney(expense.amountInKurus)}\n'
-                'Ödeyen: ${_members[expense.paidById]}\n\n'
+                'Toplam: ${formatMoney(expense.amountInKurus)}\n'
+                'Ödeyen: ${_memberLabel(expense.paidById)}\n\n'
                 '$shareLines\n\n'
-                'Payları kontrol edip gideri listeye ekleyebilirsin.',
+                'Kaydettiğinde gideri ev üyeleri de görebilecek.',
               ),
             ),
             actions: [
@@ -128,7 +114,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 onPressed: () {
                   Navigator.of(dialogContext).pop(true);
                 },
-                child: const Text('Listeye ekle'),
+                child: const Text('Gideri kaydet'),
               ),
             ],
           );
@@ -139,7 +125,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
       }
 
       if (shouldAdd == true) {
-        Navigator.of(context).pop(expense);
+        await _saveExpense(expense);
       }
       return;
     }
@@ -149,110 +135,152 @@ class _AddExpensePageState extends State<AddExpensePage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _saveExpense(Expense expense) async {
+    if (_saving) return;
+    setState(() => _saving = true);
+
+    try {
+      await widget.onSave(expense);
+    } catch (error) {
+      debugPrint('Gider kaydedilemedi: $error');
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gider kaydedilemedi. Bağlantını kontrol edip tekrar dene.'),
+        ),
+      );
+      return;
+    }
+
+    if (mounted) {
+      Navigator.of(context).pop(expense);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Gider ekle')),
-      body: ListView(
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Text(
-            'Harcama bilgileri',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+    return PopScope<Expense>(
+      canPop: !_saving,
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Gider ekle')),
+        body: _saving
+            ? const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Gider kaydediliyor…'),
+                  ],
+                ),
+              )
+            : _buildForm(context),
+      ),
+    );
+  }
+
+  Widget _buildForm(BuildContext context) {
+    return ListView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text(
+          'Harcama bilgileri',
+          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        const Text('Ortak harcamanın adını ve toplam tutarını gir.'),
+        const SizedBox(height: 24),
+        TextField(
+          controller: _nameController,
+          maxLength: Expense.maxTitleLength,
+          onTapOutside: (_) {
+            FocusScope.of(context).unfocus();
+          },
+          decoration: const InputDecoration(
+            labelText: 'Gider adı',
+            hintText: 'Örneğin: Market',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.receipt_long_outlined),
           ),
-          const SizedBox(height: 8),
-          const Text('Ortak harcamanın adını ve toplam tutarını gir.'),
-          const SizedBox(height: 24),
-          TextField(
-            controller: _nameController,
-            onTapOutside: (_) {
-              FocusScope.of(context).unfocus();
-            },
-            decoration: const InputDecoration(
-              labelText: 'Gider adı',
-              hintText: 'Örneğin: Market',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.receipt_long_outlined),
-            ),
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.sentences,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 20),
+        TextField(
+          controller: _amountController,
+          onTapOutside: (_) {
+            FocusScope.of(context).unfocus();
+          },
+          decoration: const InputDecoration(
+            labelText: 'Toplam tutar',
+            hintText: 'Örneğin: 125,50',
+            suffixText: 'TL',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.payments_outlined),
           ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _amountController,
-            onTapOutside: (_) {
-              FocusScope.of(context).unfocus();
-            },
-            decoration: const InputDecoration(
-              labelText: 'Toplam tutar',
-              hintText: 'Örneğin: 125,50',
-              suffixText: 'TL',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.payments_outlined),
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            textInputAction: TextInputAction.done,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+        ),
+        const SizedBox(height: 20),
+        DropdownButtonFormField<String>(
+          initialValue: _paidById,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Kim ödedi?',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.person_outline),
           ),
-          const SizedBox(height: 20),
-          DropdownButtonFormField<String>(
-            initialValue: _paidById,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Kim ödedi?',
-              border: OutlineInputBorder(),
-              prefixIcon: Icon(Icons.person_outline),
-            ),
-            items: _members.entries.map((member) {
-              return DropdownMenuItem<String>(
-                value: member.key,
-                child: Text(member.value),
-              );
-            }).toList(),
-            onChanged: (selectedId) {
-              if (selectedId == null) {
+          items: widget.members.keys.map((id) {
+            return DropdownMenuItem<String>(
+              value: id,
+              child: Text(_memberLabel(id)),
+            );
+          }).toList(),
+          onChanged: (selectedId) {
+            if (selectedId == null) {
+              return;
+            }
+
+            setState(() {
+              _paidById = selectedId;
+            });
+          },
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Kimler arasında bölüşülsün?',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        for (final id in widget.members.keys)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: Text(_memberLabel(id)),
+            value: _participantIds.contains(id),
+            onChanged: (checked) {
+              if (checked == null) {
                 return;
               }
 
               setState(() {
-                _paidById = selectedId;
+                if (checked) {
+                  _participantIds.add(id);
+                } else {
+                  _participantIds.remove(id);
+                }
               });
             },
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Kimler arasında bölüşülsün?',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          for (final member in _members.entries)
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              title: Text(member.value),
-              value: _participantIds.contains(member.key),
-              onChanged: (checked) {
-                if (checked == null) {
-                  return;
-                }
-
-                setState(() {
-                  if (checked) {
-                    _participantIds.add(member.key);
-                  } else {
-                    _participantIds.remove(member.key);
-                  }
-                });
-              },
-            ),
-          const SizedBox(height: 28),
-          FilledButton.icon(
-            onPressed: _checkExpense,
-            icon: const Icon(Icons.check),
-            label: const Text('Bilgileri kontrol et'),
-          ),
-        ],
-      ),
+        const SizedBox(height: 28),
+        FilledButton.icon(
+          onPressed: _checkExpense,
+          icon: const Icon(Icons.check),
+          label: const Text('Bilgileri kontrol et'),
+        ),
+      ],
     );
   }
 }

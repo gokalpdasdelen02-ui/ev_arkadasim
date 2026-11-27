@@ -48,9 +48,32 @@ match /householdInvites/{code} {
       return /databases/$(database)/documents/households/$(householdId);
     }
 
-    match /households/{householdId} {
-      allow get: if signedIn()
+    function isHouseholdMember(householdId) {
+      return signedIn()
         && get(membershipPath(request.auth.uid)).data.householdId == householdId;
+    }
+
+    function isExpenseMember(householdId, uid) {
+      return uid is string && uid.matches('^[A-Za-z0-9_-]{1,128}$')
+        && exists(/databases/$(database)/documents/households/$(householdId)/members/$(uid));
+    }
+
+    function validExpenseParticipants(householdId, ids) {
+      let count = ids.size();
+      // At most 8 participant lookups, one payer and one requester membership.
+      return count > 0 && count <= 8 && ids.toSet().size() == count
+        && isExpenseMember(householdId, ids[0])
+        && (count < 2 || isExpenseMember(householdId, ids[1]))
+        && (count < 3 || isExpenseMember(householdId, ids[2]))
+        && (count < 4 || isExpenseMember(householdId, ids[3]))
+        && (count < 5 || isExpenseMember(householdId, ids[4]))
+        && (count < 6 || isExpenseMember(householdId, ids[5]))
+        && (count < 7 || isExpenseMember(householdId, ids[6]))
+        && (count < 8 || isExpenseMember(householdId, ids[7]));
+    }
+
+    match /households/{householdId} {
+      allow get: if isHouseholdMember(householdId);
 
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly(['name', 'ownerId', 'createdAt'])
@@ -61,6 +84,66 @@ match /householdInvites/{code} {
         && request.resource.data.createdAt == request.time
         && !exists(membershipPath(request.auth.uid))
         && getAfter(membershipPath(request.auth.uid)).data.householdId == householdId;
+
+      match /members/{uid} {
+        allow read: if isHouseholdMember(householdId);
+
+        allow create, update: if isHouseholdMember(householdId)
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['displayName'])
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() > 0
+          && request.resource.data.displayName.size() <= 40;
+      }
+
+      match /expenses/{expenseId} {
+        allow read: if isHouseholdMember(householdId);
+
+        allow create: if isHouseholdMember(householdId)
+          && request.resource.data.keys().hasOnly([
+            'title', 'amountInKurus', 'paidById', 'createdById', 'participantIds', 'createdAt'
+          ])
+          && request.resource.data.createdById == request.auth.uid
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 80
+          && request.resource.data.amountInKurus is int
+          && request.resource.data.amountInKurus > 0
+          && request.resource.data.amountInKurus <= 100000000
+          && isExpenseMember(householdId, request.resource.data.paidById)
+          && request.resource.data.participantIds is list
+          && validExpenseParticipants(householdId, request.resource.data.participantIds);
+      }
+
+      match /payments/{paymentId} {
+        allow read: if isHouseholdMember(householdId)
+          && (resource.data.debtorId == request.auth.uid
+            || resource.data.creditorId == request.auth.uid);
+
+        allow create: if isHouseholdMember(householdId)
+          && request.resource.data.keys().hasOnly([
+            'debtorId', 'creditorId', 'amountInKurus', 'status', 'createdAt'
+          ])
+          && request.resource.data.debtorId == request.auth.uid
+          && request.resource.data.creditorId != request.auth.uid
+          && isExpenseMember(householdId, request.auth.uid)
+          && isExpenseMember(householdId, request.resource.data.creditorId)
+          && request.resource.data.amountInKurus is int
+          && request.resource.data.amountInKurus > 0
+          && request.resource.data.amountInKurus <= 100000000
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time;
+
+        allow update: if isHouseholdMember(householdId)
+          && resource.data.creditorId == request.auth.uid
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'resolvedAt'
+          ])
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.resolvedAt == request.time;
+      }
     }
 
     match /memberships/{uid} {

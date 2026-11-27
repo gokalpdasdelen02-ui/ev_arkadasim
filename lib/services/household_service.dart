@@ -11,6 +11,32 @@ class HouseholdService {
     return _db.collection('memberships').doc(uid);
   }
 
+  CollectionReference<Map<String, dynamic>> _members(String householdId) {
+    return _db.collection('households').doc(householdId).collection('members');
+  }
+
+  Stream<Map<String, String>> watchMemberNames(String householdId) {
+    return _members(householdId).snapshots().map((snapshot) {
+      final names = <String, String>{};
+      for (final member in snapshot.docs) {
+        final name = member.data()['displayName'];
+        if (name is String && name.trim().isNotEmpty) {
+          names[member.id] = name;
+        }
+      }
+
+      return Map<String, String>.unmodifiable(names);
+    });
+  }
+
+  Future<void> saveMemberName({
+    required String householdId,
+    required String uid,
+    required String name,
+  }) {
+    return _members(householdId).doc(uid).set({'displayName': name.trim()});
+  }
+
   Future<Household?> getHousehold(String uid) async {
     final membership = await _membership(uid).get();
     if (!membership.exists) return null;
