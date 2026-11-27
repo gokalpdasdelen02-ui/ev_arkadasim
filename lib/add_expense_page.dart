@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_theme.dart';
 import 'models/expense.dart';
 import 'money.dart';
 
@@ -57,7 +58,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
     if (name.isEmpty) {
       message = 'Lütfen gider adını gir.';
     } else if (name.length > Expense.maxTitleLength) {
-      message = 'Gider adı en fazla ${Expense.maxTitleLength} karakter olabilir.';
+      message =
+          'Gider adı en fazla ${Expense.maxTitleLength} karakter olabilir.';
     } else if (amountInKurus == null) {
       message = 'Geçerli bir tutar gir. Örneğin: 125,50';
     } else if (amountInKurus <= 0) {
@@ -67,7 +69,8 @@ class _AddExpensePageState extends State<AddExpensePage> {
     } else if (_participantIds.isEmpty) {
       message = 'En az bir katılımcı seç.';
     } else if (_participantIds.length > Expense.maxParticipants) {
-      message = 'Bir gider için en fazla ${Expense.maxParticipants} kişi seçebilirsin.';
+      message =
+          'Bir gider için en fazla ${Expense.maxParticipants} kişi seçebilirsin.';
     } else {
       final expense = Expense.equalSplit(
         title: name,
@@ -147,7 +150,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Gider kaydedilemedi. Bağlantını kontrol edip tekrar dene.'),
+          content: Text(
+            'Gider kaydedilemedi. Bağlantını kontrol edip tekrar dene.',
+          ),
         ),
       );
       return;
@@ -175,7 +180,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                   ],
                 ),
               )
-            : _buildForm(context),
+            : SafeArea(child: _buildForm(context)),
       ),
     );
   }
@@ -183,11 +188,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
   Widget _buildForm(BuildContext context) {
     return ListView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.all(20),
+      padding: AppTheme.pagePadding,
       children: [
-        const Text(
+        Text(
           'Harcama bilgileri',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.headlineMedium,
         ),
         const SizedBox(height: 8),
         const Text('Ortak harcamanın adını ve toplam tutarını gir.'),
@@ -201,7 +206,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
           decoration: const InputDecoration(
             labelText: 'Gider adı',
             hintText: 'Örneğin: Market',
-            border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.receipt_long_outlined),
           ),
           textCapitalization: TextCapitalization.sentences,
@@ -217,7 +221,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
             labelText: 'Toplam tutar',
             hintText: 'Örneğin: 125,50',
             suffixText: 'TL',
-            border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.payments_outlined),
           ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -229,7 +232,6 @@ class _AddExpensePageState extends State<AddExpensePage> {
           isExpanded: true,
           decoration: const InputDecoration(
             labelText: 'Kim ödedi?',
-            border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.person_outline),
           ),
           items: widget.members.keys.map((id) {
@@ -249,9 +251,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
           },
         ),
         const SizedBox(height: 24),
-        const Text(
+        Text(
           'Kimler arasında bölüşülsün?',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 8),
         for (final id in widget.members.keys)

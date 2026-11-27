@@ -1,66 +1,91 @@
 import 'package:flutter/material.dart';
 
+import 'app_theme.dart';
 import 'models/payment.dart';
 import 'money.dart';
 
-Future<int?> showPaymentAmountDialog({
+Future<int?> requestPaymentAmount({
   required BuildContext context,
   required String creditorName,
   required int maxAmountInKurus,
-}) {
-  final formKey = GlobalKey<FormState>();
-  var amount = maxAmountInKurus;
+}) => Navigator.of(context).push<int>(
+  MaterialPageRoute<int>(
+    builder: (_) => _PaymentAmountPage(
+      creditorName: creditorName,
+      maxAmountInKurus: maxAmountInKurus,
+    ),
+  ),
+);
 
-  return showDialog<int>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      scrollable: true,
-      title: const Text('Ödeme bildir'),
-      content: Form(
-        key: formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Alacaklı: $creditorName'),
-            const Text('Parayı gönderdiysen ödediğin tutarı gir.'),
-            const SizedBox(height: 12),
-            TextFormField(
-              initialValue: formatAmount(maxAmountInKurus),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Ödenen tutar (TL)'),
-              validator: (value) {
-                final parsed = parseMoneyInKurus(value ?? '');
-                if (parsed == null || parsed <= 0) {
-                  return 'Geçerli bir tutar gir.';
-                }
-                if (parsed > maxAmountInKurus) {
-                  return 'En fazla ${formatMoney(maxAmountInKurus)} bildirebilirsin.';
-                }
-                return null;
-              },
-              onSaved: (value) => amount = parseMoneyInKurus(value!)!,
-            ),
-          ],
+class _PaymentAmountPage extends StatefulWidget {
+  const _PaymentAmountPage({
+    required this.creditorName,
+    required this.maxAmountInKurus,
+  });
+
+  final String creditorName;
+  final int maxAmountInKurus;
+
+  @override
+  State<_PaymentAmountPage> createState() => _PaymentAmountPageState();
+}
+
+class _PaymentAmountPageState extends State<_PaymentAmountPage> {
+  final _formKey = GlobalKey<FormState>();
+  late int _amount;
+
+  void _submit() {
+    final form = _formKey.currentState!;
+    if (!form.validate()) return;
+    form.save();
+    Navigator.of(context).pop(_amount);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final type = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Ödeme bildir')),
+      body: SafeArea(
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            padding: AppTheme.pagePadding,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            children: [
+              Text('Alacaklı: ${widget.creditorName}', style: type.titleLarge),
+              const SizedBox(height: 8),
+              const Text('Parayı gönderdiysen ödediğin tutarı gir.'),
+              const SizedBox(height: 20),
+              TextFormField(
+                initialValue: formatAmount(widget.maxAmountInKurus),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Ödenen tutar (TL)',
+                ),
+                onTapOutside: (_) => FocusScope.of(context).unfocus(),
+                validator: (value) {
+                  final parsed = parseMoneyInKurus(value ?? '');
+                  if (parsed == null || parsed <= 0) {
+                    return 'Geçerli bir tutar gir.';
+                  }
+                  if (parsed > widget.maxAmountInKurus) {
+                    return 'En fazla ${formatMoney(widget.maxAmountInKurus)} bildirebilirsin.';
+                  }
+                  return null;
+                },
+                onSaved: (value) => _amount = parseMoneyInKurus(value!)!,
+              ),
+              const SizedBox(height: 20),
+              FilledButton(onPressed: _submit, child: const Text('Bildir')),
+            ],
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Vazgeç'),
-        ),
-        FilledButton(
-          onPressed: () {
-            final form = formKey.currentState!;
-            if (!form.validate()) return;
-            form.save();
-            Navigator.pop(dialogContext, amount);
-          },
-          child: const Text('Bildir'),
-        ),
-      ],
-    ),
-  );
+    );
+  }
 }
 
 class PaymentSection extends StatelessWidget {
@@ -89,39 +114,55 @@ class PaymentSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Ödeme bildirimleri',
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        if (visible.isEmpty) const Text('Henüz ödeme bildirimi yok.'),
-        for (final payment in visible) _buildPayment(payment),
+        if (visible.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(14),
+              child: Text('Henüz ödeme bildirimi yok.'),
+            ),
+          ),
+        for (final payment in visible)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _buildPayment(context, payment),
+          ),
       ],
     );
   }
 
-  Widget _buildPayment(Payment payment) {
+  Widget _buildPayment(BuildContext context, Payment payment) {
     final incoming = payment.creditorId == userId;
     final otherId = incoming ? payment.debtorId : payment.creditorId;
     final other = members[otherId] ?? 'Üye';
     final status = switch (payment.status) {
-      PaymentStatus.pending => 'Onay bekliyor',
+      PaymentStatus.pending =>
+        incoming ? 'Onayını bekliyor' : 'Alacaklının onayı bekleniyor',
       PaymentStatus.approved => 'Onaylandı',
       PaymentStatus.rejected => 'Reddedildi',
     };
 
     return Card(
-      elevation: 0,
-      color: Colors.white,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           ListTile(
-            leading: Icon(incoming ? Icons.call_received : Icons.call_made),
-            title: Text(formatMoney(payment.amountInKurus)),
+            leading: Icon(
+              payment.status == PaymentStatus.pending
+                  ? Icons.schedule
+                  : incoming
+                  ? Icons.call_received
+                  : Icons.call_made,
+              color: payment.status == PaymentStatus.pending
+                  ? AppTheme.attention(context)
+                  : Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            title: Text(
+              '$other · ${formatMoney(payment.amountInKurus)}',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontFeatures: AppTheme.tabularFigures),
+            ),
             subtitle: Text(
-              '${incoming ? 'Ödemeyi bildiren' : 'Alacaklı'}: $other · $status',
+              '${incoming ? 'Gelen ödeme' : 'Giden ödeme'} · $status',
             ),
           ),
           if (incoming && payment.status == PaymentStatus.pending)
@@ -136,11 +177,11 @@ class PaymentSection extends StatelessWidget {
                         : () => onDecision(payment, PaymentStatus.rejected),
                     child: const Text('Reddet'),
                   ),
-                  FilledButton.tonal(
+                  FilledButton(
                     onPressed: busy
                         ? null
                         : () => onDecision(payment, PaymentStatus.approved),
-                    child: const Text('Onayla'),
+                    child: const Text('Ödemeyi aldım'),
                   ),
                 ],
               ),

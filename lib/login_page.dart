@@ -102,8 +102,7 @@ class _LoginPageState extends State<LoginPage> {
             const SizedBox(height: 24),
             Text(
               _isRegistering ? 'Hesap oluştur' : 'Hoş geldin',
-              style: Theme.of(context).textTheme.headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 8),
             Text(
@@ -122,7 +121,6 @@ class _LoginPageState extends State<LoginPage> {
               },
               decoration: const InputDecoration(
                 labelText: 'E-posta',
-                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.email_outlined),
               ),
             ),
@@ -138,7 +136,6 @@ class _LoginPageState extends State<LoginPage> {
               },
               decoration: const InputDecoration(
                 labelText: 'Şifre',
-                border: OutlineInputBorder(),
                 prefixIcon: Icon(Icons.lock_outline),
               ),
             ),

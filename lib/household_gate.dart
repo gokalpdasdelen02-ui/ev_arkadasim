@@ -199,7 +199,6 @@ class _HouseholdGateState extends State<HouseholdGate> {
             decoration: const InputDecoration(
               labelText: 'Ev adı',
               hintText: 'Örneğin: Bizim Ev',
-              border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 16),

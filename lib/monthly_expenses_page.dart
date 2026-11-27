@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_theme.dart';
 import 'models/expense.dart';
 import 'money.dart';
 import 'services/monthly_expense_report.dart';
@@ -69,7 +70,7 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
       appBar: AppBar(title: const Text('Aylık gider tablosu')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          padding: AppTheme.pagePadding,
           children: [
             Row(
               children: [
@@ -94,21 +95,24 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
             ),
             const SizedBox(height: 12),
             Card(
-              elevation: 0,
-              color: theme.colorScheme.primaryContainer,
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Toplam harcama'),
+                    Text('Toplam harcama', style: theme.textTheme.bodySmall),
                     const SizedBox(height: 4),
                     Text(
                       formatMoney(report.totalInKurus),
-                      style: theme.textTheme.headlineMedium,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontFeatures: AppTheme.tabularFigures,
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    Text('${report.expenses.length} gider · Kayıt tarihine göre'),
+                    Text(
+                      '${report.expenses.length} gider',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   ],
                 ),
               ),
@@ -127,14 +131,19 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
               const SizedBox(height: 8),
               for (final expense in report.expenses)
                 Card(
-                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     title: Text(expense.title),
                     subtitle: Text(
                       '${_dateLabel(expense.createdAt)} · '
                       'Ödeyen: ${_memberName(expense.paidById)}',
                     ),
-                    trailing: Text(formatMoney(expense.amountInKurus)),
+                    trailing: Text(
+                      formatMoney(expense.amountInKurus),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontFeatures: AppTheme.tabularFigures,
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -153,7 +162,6 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
     }.toList()..sort((a, b) => _memberName(a).compareTo(_memberName(b)));
 
     return Card(
-      elevation: 0,
       clipBehavior: Clip.antiAlias,
       child: Table(
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
@@ -167,7 +175,7 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
         ),
         children: [
           TableRow(
-            decoration: BoxDecoration(color: colors.surfaceContainerHighest),
+            decoration: BoxDecoration(color: colors.surfaceContainerLow),
             children: [
               _cell('Üye', heading: true),
               _cell('Ödediği', heading: true, numeric: true),
@@ -179,7 +187,10 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
               children: [
                 _cell(_memberName(id)),
                 _cell(formatMoney(report.paidByMember[id] ?? 0), numeric: true),
-                _cell(formatMoney(report.sharesByMember[id] ?? 0), numeric: true),
+                _cell(
+                  formatMoney(report.sharesByMember[id] ?? 0),
+                  numeric: true,
+                ),
               ],
             ),
         ],
@@ -193,7 +204,11 @@ class _MonthlyExpensesPageState extends State<MonthlyExpensesPage> {
       child: Text(
         text,
         textAlign: numeric ? TextAlign.end : TextAlign.start,
-        style: heading ? const TextStyle(fontWeight: FontWeight.w600) : null,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: heading ? FontWeight.w600 : null,
+          fontFeatures: numeric ? AppTheme.tabularFigures : null,
+        ),
       ),
     );
   }
